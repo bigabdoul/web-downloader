@@ -1,5 +1,4 @@
-﻿using HtmlAgilityPack;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -9,6 +8,8 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+
+using HtmlAgilityPack;
 
 namespace Downloader.Core
 {
@@ -54,7 +55,6 @@ namespace Downloader.Core
         public event EventHandler<DownloadEventArgs> ProgressBegin;
         public event EventHandler<DownloadEventArgs> ProgressStep;
         public event EventHandler<DownloadEventArgs> FileSaved;
-        public event EventHandler<InternetConnectionStateChangedEventArgs> InternetConnectionStateChanged;
 
         #endregion
 
@@ -477,22 +477,7 @@ namespace Downloader.Core
                 }
             }
         }
-
-        private void OnInternetConnectionStateChanged(bool connected)
-        {
-            if (this.InternetConnectionStateChanged != null)
-            {
-                var e = new InternetConnectionStateChangedEventArgs(connected);
-                
-                if (_syncRoot != null && _syncRoot.InvokeRequired) {
-                    _syncRoot.Invoke(this.InternetConnectionStateChanged, new object[] { this, e });
-                }
-                else {
-                    this.InternetConnectionStateChanged(this, e);
-                }
-            }
-        }
-
+        
         private float GetImageAspectRatio(float width, float height)
         {
             if (width == 0F || height == 0F) return 0F;
@@ -505,43 +490,5 @@ namespace Downloader.Core
         }
 
         #endregion helper methods
-    }
-
-    public sealed class DownloadEventArgs : CancelEventArgs
-    {
-        public DownloadEventArgs()
-        {
-        }
-
-        public DownloadEventArgs(bool cancel) :base(cancel)
-        {
-        }
-
-        public int ProgressMaximum { get; set; }
-        public int ProgressValue { get; set; }
-
-        public string Message { get; set; }
-
-        public string SavedFileName { get; set; }
-
-        public string Url { get; set; }
-
-        public byte[] Data { get; set; }
-
-        public long TotalBytes { get; set; }
-    }
-
-    public sealed class InternetConnectionStateChangedEventArgs : EventArgs
-    {
-        public InternetConnectionStateChangedEventArgs()
-        {
-        }
-
-        public InternetConnectionStateChangedEventArgs(bool connected)
-        {
-            this.Connected = connected;
-        }
-
-        public bool Connected { get; private set; }
     }
 }
