@@ -45,9 +45,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="DownloadEventArgs.cs" />
     <Compile Include="DownloadList.cs" />
     <Compile Include="DownloadListItem.cs" />
     <Compile Include="DownloadManager.cs" />
+    <Compile Include="PauseToken.cs" />
     <Compile Include="PauseTokenSource.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

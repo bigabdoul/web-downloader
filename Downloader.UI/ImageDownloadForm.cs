@@ -248,7 +248,9 @@ namespace Downloader.UI
         {
             string[] links;
 
-            if (!(url.StartsWith("http://") || url.StartsWith("https://"))) {
+            if (!(url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || 
+                  url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            ) {
                 url = "http://" + url;
             }
 

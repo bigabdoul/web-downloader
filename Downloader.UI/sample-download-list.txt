@@ -1,0 +1,28 @@
+﻿# This is a comment. Comments may start with # or //
+
+[FOLDER] C:\Downloads\Galleries\001
+
+http://www.example.com/pictures/flowers/
+http://www.example.com/pictures/trees/
+http://www.example.com/pictures/cats/
+http://www.example.com/pictures/dogs/
+http://www.example.com/pictures/food
+
+// This is another comment. This will change the destination folder for the next download group.
+
+[FOLDER] C:\Downloads\Galleries\002
+http://www.example.com/pics/people
+http://www.example.com/pics/schools/
+http://www.example.com/pics/housing/
+http://www.example.com/pics/bridges/
+http://www.example.com/pics/rivers
+
+#It's worth to mention that blank lines are ignored.
+
+[FOLDER] C:\Downloads\Videos
+
+http://www.example.com/vids/flowers/
+http://www.example.com/vids/trees/
+http://www.example.com/vids/cats/
+http://www.example.com/vids/dogs/
+http://www.example.com/vids/food
