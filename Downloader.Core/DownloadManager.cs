@@ -13,14 +13,24 @@ using HtmlAgilityPack;
 
 namespace Downloader.Core
 {
+    /// <summary>
+    /// Represents an object that manages downloads of internet resources.
+    /// </summary>
     public class DownloadManager : IDisposable
     {
         #region constructors
 
+        /// <summary>
+        /// Initializes an instance of the <see cref="DownloadManager"/> class.
+        /// </summary>
         public DownloadManager()
         {
         }
 
+        /// <summary>
+        /// Initializes an instance of the <see cref="DownloadManager"/> class using an object used to synchronously execute event handler delegates.
+        /// </summary>
+        /// <param name="syncRoot">An object used to invoke synchronization delegates.</param>
         public DownloadManager(ISynchronizeInvoke syncRoot)
         {
             this.SyncRoot = syncRoot;
@@ -51,36 +61,76 @@ namespace Downloader.Core
 
         #region events
 
+        /// <summary>
+        /// Event raised to notify handlers that an operation is being cancelled.
+        /// </summary>
         public event EventHandler Cancelled;
+
+        /// <summary>
+        /// Event raised to notify handlers that progress indicators should be initialized.
+        /// </summary>
         public event EventHandler<DownloadEventArgs> ProgressBegin;
+
+        /// <summary>
+        /// Event raised to notify handlers that progress value has been incremented.
+        /// </summary>
         public event EventHandler<DownloadEventArgs> ProgressStep;
+
+        /// <summary>
+        /// Event raised to notify handlers that a downloaded resource has been saved to the file system.
+        /// </summary>
         public event EventHandler<DownloadEventArgs> FileSaved;
 
         #endregion
 
         #region properties
 
+        /// <summary>
+        /// Gets a value that indicates whether the current download manager is working.
+        /// </summary>
         public bool IsBusy { get { return _busy; } }
+
+        /// <summary>
+        /// Indicates whether errors occured since the last download operation.
+        /// </summary>
         public bool HasErrors { get { return _errors.Count > 0; } }
 
+        /// <summary>
+        /// Gets the total number of files saved to the system.
+        /// </summary>
         public int TotalFilesSaved { get { return _filesSaved; } }
 
+        /// <summary>
+        /// Gets the number of bytes that have been saved during the last save operation.
+        /// </summary>
         public long LastBytesSaved { get { return _lastBytesSaved; } }
 
+        /// <summary>
+        /// Gets the total number of bytes downloaded since the creation of this <see cref="DownloadManager"/> instance.
+        /// </summary>
         public long TotalBytesDownloaded { get { return _totalBytesDownloaded; } }
 
+        /// <summary>
+        /// Gets or sets an object used to invoke synchronization delegates.
+        /// </summary>
         public ISynchronizeInvoke SyncRoot
         {
             get { return _syncRoot; }
             set { _syncRoot = value; }
         }
 
+        /// <summary>
+        /// Gets or sets the minimum size of images to download.
+        /// </summary>
         public Size MinImageSize
         {
             get { return _minImageSize; }
             set { _minImageSize = value; }
         }
 
+        /// <summary>
+        /// Gets or sets the minimum aspect ratio of images to download.
+        /// </summary>
         public float MinImageAspectRatio
         {
             get { return _minImageRatio; }
@@ -89,6 +139,10 @@ namespace Downloader.Core
 
         #endregion
 
+        /// <summary>
+        /// Returns a collection string messages that represents the errors that occured.
+        /// </summary>
+        /// <returns></returns>
         public IEnumerable<string> GetErrors()
         {
             foreach (Exception e in _errors)
@@ -97,6 +151,11 @@ namespace Downloader.Core
             }
         }
 
+        /// <summary>
+        /// Downloads the document identified by <paramref name="url"/> and parses its content to find HTML tags that reference images.
+        /// </summary>
+        /// <param name="url">The URL of the document to download and parse.</param>
+        /// <returns>A task that returns an array of string representing the parsed image references.</returns>
         public async Task<string[]> GetImageLinks(string url)
         {
             string key = url.Trim().TrimEnd('/');
@@ -159,16 +218,42 @@ namespace Downloader.Core
             return EmptyStringArray;
         }
 
+        /// <summary>
+        /// Downloads to the specified folder the provided image references.
+        /// </summary>
+        /// <param name="folder">The fully-qualified path of the folder in which the downloaded images will be saved. If the directory does not exist, an attempt to create it will be made.</param>
+        /// <param name="links">An array of URLs referencing the images to download.</param>
+        /// <returns>A task that returns an integer that represents the number of images processed (not necessarily downloaded).</returns>
         public async Task<int> DownloadImages(string folder, params string[] links)
         {
             return await DownloadImages(CancellationToken.None, PauseToken.None, folder, links);
         }
 
+        /// <summary>
+        /// Downloads to the specified folder the provided image references using a cancellation token.
+        /// </summary>
+        /// <param name="cancelToken">A token used to cancel the task.</param>
+        /// <param name="folder">The fully-qualified path of the folder in which the downloaded images will be saved. If the directory does not exist, an attempt to create it will be made.</param>
+        /// <param name="links">An array of URLs referencing the images to download.</param>
+        /// <returns>A task that returns an integer that represents the number of images processed (not necessarily downloaded).</returns>
         public async Task<int> DownloadImages(CancellationToken cancelToken, string folder, params string[] links)
         {
             return await DownloadImages(cancelToken, PauseToken.None, folder, links);
         }
 
+        /// <summary>
+        /// Downloads to the specified folder the provided image references using cancellation and pause tokens.
+        /// </summary>
+        /// <param name="cancelToken">A token used to cancel the task.</param>
+        /// <param name="pauseToken">A token used to pause the task.</param>
+        /// <param name="folder">The fully-qualified path of the folder in which the downloaded images will be saved. If the directory does not exist, an attempt to create it will be made.</param>
+        /// <param name="links">An array of URLs referencing the images to download.</param>
+        /// <returns>A task that returns an integer that represents the number of images processed (not necessarily downloaded).</returns>
+        /// <remarks>
+        /// <para>This method skips images that have already been downloaded and saved to the specified destination folder.</para>
+        /// <para>It also skips images that are not compliant with the current minimum size and, eventually, minimum aspect ratio (if stricly positive).</para>
+        /// <para>The return value of the method is an integer that indicates the number of links processed, including any skipped files.</para>
+        /// </remarks>
         public async Task<int> DownloadImages(CancellationToken cancelToken, PauseToken pauseToken, string folder, params string[] links)
         {
             if (!_busy)
@@ -272,6 +357,10 @@ namespace Downloader.Core
             return -2;
         }
 
+        /// <summary>
+        /// Cancels the current download operation.
+        /// </summary>
+        /// <returns>true if the download manager is busy; otherwise, false.</returns>
         public bool Cancel()
         {
             if (_busy) {
@@ -281,6 +370,9 @@ namespace Downloader.Core
             return false;
         }
 
+        /// <summary>
+        /// Releases all managed and unmanaged resources used by the current <see cref="DownloadManager"/> instance.
+        /// </summary>
         public void Dispose()
         {
             if (!_disposed)
@@ -292,7 +384,7 @@ namespace Downloader.Core
             }
         }
 
-        #region helper methods
+        #region private helper methods
 
         private void Cancel(int millisecondsTimeout)
         {
@@ -345,59 +437,6 @@ namespace Downloader.Core
                 }
                 if (_cancel) break;
             }
-        }
-
-        public static string ComputeUniqueName(string url, string folder)
-        {
-            string name = url.Split('/').Last();
-
-            name = string.Format("{0}_0x{1:x}{2}",
-                Path.GetFileNameWithoutExtension(name),
-                url.GetHashCode(),
-                Path.GetExtension(name)
-            );
-
-            return Path.Combine(folder, name);
-        }
-
-        public static void MakeAbsoluteUri(IList<string> links, Uri baseUri)
-        {
-            for (int i = 0; i < links.Count; i++)
-            {
-                try
-                {
-                    string url = links[i];
-
-                    if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    links[i] = new Uri(baseUri, url).AbsoluteUri;
-                }
-                catch
-                {
-                }
-            }
-        }
-
-        [System.Runtime.InteropServices.DllImport("wininet.dll")]
-        private extern static bool InternetGetConnectedState(out int conn, int val);
-
-        public enum InternetConnectionState
-        {
-            Modem = 0x1,
-            Lan = 0x2,
-            Proxy = 0x4,
-            Ras = 0x10,
-            Offline = 0x20,
-            Configured = 0x40
-        }
-
-        public static bool InternetAvailable()
-        {
-            int conn;
-            return InternetGetConnectedState(out conn, 0);
         }
 
         private void OnCancelled()
@@ -489,6 +528,69 @@ namespace Downloader.Core
             _errors.Add(ex.InnerException ?? ex);
         }
 
-        #endregion helper methods
+        #endregion
+
+        #region public static methods
+
+        /// <summary>
+        /// Generates a unique file name derived from the specified <paramref name="url"/>
+        /// and combines it into a path with the provided <paramref name="folder"/>.
+        /// </summary>
+        /// <param name="url">The URL of the resource for which to generate </param>
+        /// <param name="folder">The destination folder of the file.</param>
+        /// <returns></returns>
+        public static string ComputeUniqueName(string url, string folder)
+        {
+            string name = url.Split('/').Last();
+
+            name = string.Format("{0}_0x{1:x}{2}",
+                Path.GetFileNameWithoutExtension(name),
+                url.GetHashCode(),
+                Path.GetExtension(name)
+            );
+
+            return Path.Combine(folder, name);
+        }
+
+        /// <summary>
+        /// Makes sure that all provided links are absolute (and not relative) URIs.
+        /// </summary>
+        /// <param name="links">A list of links to make absolute URI.</param>
+        /// <param name="baseUri">The base URI to use for any relative link found in the list.</param>
+        public static void MakeAbsoluteUri(IList<string> links, Uri baseUri)
+        {
+            for (int i = 0; i < links.Count; i++)
+            {
+                try
+                {
+                    string url = links[i];
+
+                    if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    links[i] = new Uri(baseUri, url).AbsoluteUri;
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        [System.Runtime.InteropServices.DllImport("wininet.dll")]
+        private extern static bool InternetGetConnectedState(out int conn, int val);
+
+        /// <summary>
+        /// Checks whether the local system is actually connected to the internet.
+        /// </summary>
+        /// <returns></returns>
+        public static bool InternetAvailable()
+        {
+            int conn;
+            return InternetGetConnectedState(out conn, 0);
+        }
+
+        #endregion
     }
 }
