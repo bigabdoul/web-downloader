@@ -390,7 +390,106 @@ namespace Downloader.Core
         /// <returns>A task that returns an integer that represents the number of files processed (not necessarily downloaded).</returns>
         public virtual async Task<int> DownloadFiles(CancellationToken cancelToken, PauseToken pauseToken, string folder, params string[] links)
         {
-            throw new NotImplementedException();
+            if (!_busy)
+            {
+                try
+                {
+                    _busy = true;
+                    _cancel = false;
+                    _lastBytesSaved = 0L;
+
+                    _errors.Clear();
+
+                    if (!Directory.Exists(folder))
+                    {
+                        Directory.CreateDirectory(folder);
+                    }
+
+                    int saved = 0, counter = 0, index = 1, max = links.Length;
+                    int minW = _minImageSize.Width, minH = _minImageSize.Height;
+
+                    this.OnProgressBegin(max);
+
+                    foreach (string url in links)
+                    {
+                        await pauseToken.WaitWhilePausedAsync();
+
+                        this.OnProgressStep(string.Format("Downloading file {0} of {1}...", index++, max));
+
+                        string name = ComputeUniqueName(url, folder);
+
+                        if (_skippedFiles.Contains(name))
+                        {
+                            counter++;
+                            continue;
+                        }
+
+                        if (File.Exists(name))
+                        {
+                            counter++;
+                            _skippedFiles.Add(name);
+                            continue;
+                        }
+
+                        var data = await _client.GetByteArrayAsync(url);
+                        int dataLength = data.Length;
+                        _totalBytesDownloaded += dataLength;
+
+                        using (var img = Image.FromStream(new MemoryStream(data)))
+                        {
+                            int w = img.Width, h = img.Height;
+                            bool shouldSave = w >= minW || h >= minH;
+
+                            if (shouldSave && _minImageRatio > 0)
+                            {
+                                shouldSave = this.GetImageAspectRatio(w, h) >= _minImageRatio;
+                            }
+
+                            if (shouldSave)
+                            {
+                                try
+                                {
+                                    img.Save(name, img.RawFormat);
+                                    saved++;
+                                    counter++;
+                                    _skippedFiles.Add(name);
+                                    _lastBytesSaved += dataLength;
+                                    this.OnFileSaved(name, url, data);
+                                }
+                                catch (Exception ex)
+                                {
+                                    _errors.Add(ex);
+                                }
+                            }
+                            else
+                            {
+                                counter++;
+                                _skippedFiles.Add(name);
+                            } // endif
+                        }
+
+                        if (_cancel || cancelToken.IsCancellationRequested) break;
+                    } // endforeach
+
+                    _filesSaved += saved;
+                    return counter;
+                }
+                catch (HttpRequestException ex)
+                {
+                    this.LogError(ex);
+                }
+                catch (Exception ex)
+                {
+                    this.LogError(ex);
+                    return -1;
+                }
+                finally
+                {
+                    if (_cancel) this.OnCancelled();
+                    _busy = false;
+                }
+            }
+            return -2;
         }
 
         /// <summary>
@@ -411,7 +510,7 @@ namespace Downloader.Core
         /// </summary>
         public void Dispose()
         {
-            this.disposing(false);
+            this.Dispose(false);
         }
 
         #region protected methods
