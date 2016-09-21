@@ -532,6 +532,10 @@ namespace Downloader.Core
             }
         }
         
+        /// <summary>
+        /// Cancels the current operation with an optional timeout.
+        /// </summary>
+        /// <param name="millisecondsTimeout">The number of milliseconds to wait before timing out.</param>
         protected virtual void Cancel(int millisecondsTimeout)
         {
             if (this.Cancel() && millisecondsTimeout != 0)
@@ -546,6 +550,9 @@ namespace Downloader.Core
             }
         }
 
+        /// <summary>
+        /// Fires the <see cref="Cancelled"/> event.
+        /// </summary>
         protected virtual void OnCancelled()
         {
             if (Cancelled != null)
@@ -568,6 +575,10 @@ namespace Downloader.Core
             _cancel = false;
         }
 
+        /// <summary>
+        /// Fires the <see cref="ProgressBegin"/> event.
+        /// </summary>
+        /// <param name="maxSteps">The number of maximum steps required for the current operation to complete. This argument is optional.</param>
         protected virtual void OnProgressBegin(int maxSteps = 1)
         {
             _progressValue = 0;
@@ -592,6 +603,10 @@ namespace Downloader.Core
             }
         }
 
+        /// <summary>
+        /// Fires the <see cref="ProgressStep"/> event.
+        /// </summary>
+        /// <param name="msg">The message to include in the event data. This argument is optional.</param>
         protected virtual void OnProgressStep(string msg = null)
         {
             if (this.ProgressStep != null)
@@ -609,6 +624,13 @@ namespace Downloader.Core
             }
         }
 
+        /// <summary>
+        /// Fires the <see cref="FileSaved"/> event.
+        /// </summary>
+        /// <param name="name">The name of the saved file.</param>
+        /// <param name="url">The URL of the saved file.</param>
+        /// <param name="data">The downloaded content that was saved into the file.</param>
+        /// <param name="msg">The message to include. This argument is optional.</param>
         protected virtual void OnFileSaved(string name, string url, byte[] data, string msg = null)
         {
             if (this.FileSaved != null)
@@ -624,6 +646,13 @@ namespace Downloader.Core
             }
         }
         
+        /// <summary>
+        /// Adds the specified exception to the internal exceptions list.
+        /// </summary>
+        /// <param name="ex">
+        /// The error that occured. If the exception's InnerException property is set
+        /// then that exception is added; otherwise, the specified exception is added.
+        /// </param>
         protected virtual void LogError(Exception ex)
         {
             _errors.Add(ex.InnerException ?? ex);
