@@ -357,6 +357,21 @@ namespace Downloader.Core
             return -2;
         }
 
+        public virtual async Task<int> DownloadFiles(string folder, params string[] links)
+        {
+            return await DownloadFiles(CancellationToken.None, PauseToken.None, folder, links);
+        }
+
+        public async Task<int> DownloadFiles(CancellationToken cancelToken, string folder, params string[] links)
+        {
+            return await DownloadFiles(cancelToken, PauseToken.None, folder, links);
+        }
+
+        public virtual async Task<int> DownloadFiles(CancellationToken cancelToken, PauseToken pauseToken, string folder, params string[] links)
+        {
+            throw new NotImplementedException();
+        }
+
         /// <summary>
         /// Cancels the current download operation.
         /// </summary>
