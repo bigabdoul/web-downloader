@@ -143,7 +143,7 @@ namespace Downloader.Core
         /// Returns a collection string messages that represents the errors that occured.
         /// </summary>
         /// <returns></returns>
-        public IEnumerable<string> GetErrors()
+        public virtual IEnumerable<string> GetErrors()
         {
             foreach (Exception e in _errors)
             {
@@ -156,7 +156,7 @@ namespace Downloader.Core
         /// </summary>
         /// <param name="url">The URL of the document to download and parse.</param>
         /// <returns>A task that returns an array of string representing the parsed image references.</returns>
-        public async Task<string[]> GetImageLinks(string url)
+        public virtual async Task<string[]> GetImageLinks(string url)
         {
             string key = url.Trim().TrimEnd('/');
 
@@ -254,7 +254,7 @@ namespace Downloader.Core
         /// <para>It also skips images that are not compliant with the current minimum size and, eventually, minimum aspect ratio (if stricly positive).</para>
         /// <para>The return value of the method is an integer that indicates the number of links processed, including any skipped files.</para>
         /// </remarks>
-        public async Task<int> DownloadImages(CancellationToken cancelToken, PauseToken pauseToken, string folder, params string[] links)
+        public virtual async Task<int> DownloadImages(CancellationToken cancelToken, PauseToken pauseToken, string folder, params string[] links)
         {
             if (!_busy)
             {
@@ -361,7 +361,7 @@ namespace Downloader.Core
         /// Cancels the current download operation.
         /// </summary>
         /// <returns>true if the download manager is busy; otherwise, false.</returns>
-        public bool Cancel()
+        public virtual bool Cancel()
         {
             if (_busy) {
                 _cancel = true;
@@ -375,18 +375,29 @@ namespace Downloader.Core
         /// </summary>
         public void Dispose()
         {
+            this.disposing(false);
+        }
+
+        #region protected methods
+
+        /// <summary>
+        /// Releases resources used by the current <see cref="DownloadManager"/> instance.
+        /// </summary>
+        /// <param name="disposing">true to release only managed resources; false to release both managed and unmanaged resources.</param>
+        protected virtual void Dispose(bool disposing)
+        {
             if (!_disposed)
             {
-                this.Cancel(5000);
-                _client.Dispose();
+                if(disposing) {
+                    this.Cancel(5000);
+                    _client.Dispose();
+                }
                 GC.SuppressFinalize(this);
                 _disposed = true;
             }
         }
-
-        #region private helper methods
-
-        private void Cancel(int millisecondsTimeout)
+        
+        protected virtual void Cancel(int millisecondsTimeout)
         {
             if (this.Cancel() && millisecondsTimeout != 0)
             {
@@ -399,6 +410,93 @@ namespace Downloader.Core
                 }).Wait(millisecondsTimeout);
             }
         }
+
+        protected virtual void OnCancelled()
+        {
+            if (Cancelled != null)
+            {
+                try
+                {
+                    if (_syncRoot != null && _syncRoot.InvokeRequired)
+                    {
+                        _syncRoot.Invoke(Cancelled, new object[] { this, EventArgs.Empty });
+                    }
+                    else
+                    {
+                        Cancelled(this, EventArgs.Empty);
+                    }
+                }
+                catch
+                {
+                }
+            }
+            _cancel = false;
+        }
+
+        protected virtual void OnProgressBegin(int maxSteps = 1)
+        {
+            _progressValue = 0;
+            if (this.ProgressBegin != null)
+            {
+                try
+                {
+                    var e = new DownloadEventArgs() { ProgressMaximum = maxSteps };
+
+                    if (_syncRoot != null && _syncRoot.InvokeRequired)
+                    {
+                        _syncRoot.Invoke(this.ProgressBegin, new object[] { this, e });
+                    }
+                    else
+                    {
+                        this.ProgressBegin(this, e);
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        protected virtual void OnProgressStep(string msg = null)
+        {
+            if (this.ProgressStep != null)
+            {
+                var e = new DownloadEventArgs() { ProgressValue = ++_progressValue, Message = msg };
+
+                if (_syncRoot != null && _syncRoot.InvokeRequired)
+                {
+                    _syncRoot.Invoke(this.ProgressStep, new object[] { this, e });
+                }
+                else
+                {
+                    this.ProgressStep(this, e);
+                }
+            }
+        }
+
+        protected virtual void OnFileSaved(string name, string url, byte[] data, string msg = null)
+        {
+            if (this.FileSaved != null)
+            {
+                var e = new DownloadEventArgs() { Data = data, Message = msg, SavedFileName = name, Url = url, TotalBytes = _totalBytesDownloaded };
+
+                if (_syncRoot != null && _syncRoot.InvokeRequired) {
+                    _syncRoot.Invoke(this.FileSaved, new object[] { this, e });
+                }
+                else {
+                    this.FileSaved(this, e);
+                }
+            }
+        }
+        
+        protected virtual void LogError(Exception ex)
+        {
+            _errors.Add(ex.InnerException ?? ex);
+        }
+
+        #endregion
+
+        #region private helper methods
 
         private IEnumerable<string> GetAttributeValues(IEnumerable<HtmlNode> nodes, string attrName)
         {
@@ -438,94 +536,11 @@ namespace Downloader.Core
                 if (_cancel) break;
             }
         }
-
-        private void OnCancelled()
-        {
-            if (Cancelled != null)
-            {
-                try
-                {
-                    if (_syncRoot != null && _syncRoot.InvokeRequired)
-                    {
-                        _syncRoot.Invoke(Cancelled, new object[] { this, EventArgs.Empty });
-                    }
-                    else
-                    {
-                        Cancelled(this, EventArgs.Empty);
-                    }
-                }
-                catch
-                {
-                }
-            }
-            _cancel = false;
-        }
-
-        private void OnProgressBegin(int maxSteps = 1)
-        {
-            _progressValue = 0;
-            if (this.ProgressBegin != null)
-            {
-                try
-                {
-                    var e = new DownloadEventArgs() { ProgressMaximum = maxSteps };
-
-                    if (_syncRoot != null && _syncRoot.InvokeRequired)
-                    {
-                        _syncRoot.Invoke(this.ProgressBegin, new object[] { this, e });
-                    }
-                    else
-                    {
-                        this.ProgressBegin(this, e);
-                    }
-                }
-                catch
-                {
-                }
-            }
-        }
-
-        private void OnProgressStep(string msg = null)
-        {
-            if (this.ProgressStep != null)
-            {
-                var e = new DownloadEventArgs() { ProgressValue = ++_progressValue, Message = msg };
-
-                if (_syncRoot != null && _syncRoot.InvokeRequired)
-                {
-                    _syncRoot.Invoke(this.ProgressStep, new object[] { this, e });
-                }
-                else
-                {
-                    this.ProgressStep(this, e);
-                }
-            }
-        }
-
-        private void OnFileSaved(string name, string url, byte[] data, string msg = null)
-        {
-            if (this.FileSaved != null)
-            {
-                var e = new DownloadEventArgs() { Data = data, Message = msg, SavedFileName = name, Url = url, TotalBytes = _totalBytesDownloaded };
-
-                if (_syncRoot != null && _syncRoot.InvokeRequired) {
-                    _syncRoot.Invoke(this.FileSaved, new object[] { this, e });
-                }
-                else {
-                    this.FileSaved(this, e);
-                }
-            }
-        }
         
         private float GetImageAspectRatio(float width, float height)
         {
             if (width == 0F || height == 0F) return 0F;
             return width > height ? height / width : width / height;
-        }
-
-        private void LogError(Exception ex)
-        {
-            _errors.Add(ex.InnerException ?? ex);
         }
 
         #endregion
