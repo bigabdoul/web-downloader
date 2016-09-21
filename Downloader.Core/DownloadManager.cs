@@ -357,16 +357,37 @@ namespace Downloader.Core
             return -2;
         }
 
+        /// <summary>
+        /// Downloads to the specified folder the provided file references.
+        /// </summary>
+        /// <param name="folder">The fully-qualified path of the folder in which the downloaded files will be saved. If the directory does not exist, an attempt to create it will be made.</param>
+        /// <param name="links">An array of URLs referencing the files to download.</param>
+        /// <returns>A task that returns an integer that represents the number of files processed (not necessarily downloaded).</returns>
         public virtual async Task<int> DownloadFiles(string folder, params string[] links)
         {
             return await DownloadFiles(CancellationToken.None, PauseToken.None, folder, links);
         }
 
+        /// <summary>
+        /// Downloads to the specified folder the provided file references using a cancellation token.
+        /// </summary>
+        /// <param name="cancelToken">A token used to cancel the task.</param>
+        /// <param name="folder">The fully-qualified path of the folder in which the downloaded files will be saved. If the directory does not exist, an attempt to create it will be made.</param>
+        /// <param name="links">An array of URLs referencing the files to download.</param>
+        /// <returns>A task that returns an integer that represents the number of files processed (not necessarily downloaded).</returns>
         public async Task<int> DownloadFiles(CancellationToken cancelToken, string folder, params string[] links)
         {
             return await DownloadFiles(cancelToken, PauseToken.None, folder, links);
         }
 
+        /// <summary>
+        /// Downloads to the specified folder the provided file references using cancellation and pause tokens.
+        /// </summary>
+        /// <param name="cancelToken">A token used to cancel the task.</param>
+        /// <param name="pauseToken">A token used to pause the task.</param>
+        /// <param name="folder">The fully-qualified path of the folder in which the downloaded files will be saved. If the directory does not exist, an attempt to create it will be made.</param>
+        /// <param name="links">An array of URLs referencing the files to download.</param>
+        /// <returns>A task that returns an integer that represents the number of files processed (not necessarily downloaded).</returns>
         public virtual async Task<int> DownloadFiles(CancellationToken cancelToken, PauseToken pauseToken, string folder, params string[] links)
         {
             throw new NotImplementedException();
