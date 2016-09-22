@@ -305,9 +305,20 @@ namespace Downloader.Core
                     _filesSaved += saved;
                     return result;
                 }
+                catch (AggregateException ex)
+                {
+                    foreach (var e in ex.InnerExceptions)
+                    {
+                        if (!(e is ThreadAbortException)) {
+                            LogError(e);
+                        }
+                    }
+                    return -3;
+                }
                 catch (HttpRequestException ex)
                 {
-                    this.LogError(ex);
+                    this.LogError(ex.InnerException ?? ex);
+                    return -4;
                 }
                 catch (Exception ex)
                 {
@@ -364,22 +375,39 @@ namespace Downloader.Core
 
                     int result = await DownloadCore(cancelToken, pauseToken, folder, links, (data, url, computedName) =>
                     {
-                        // TODO: save the downloaded data
-
-                        return false; // not processed
-                    },
-                    (url, computedName) =>
-                    {
-                        // TODO: check whether skipping the given url or computed name is required or not
-                        return true; // skip file download by default
+                        try
+                        {
+                            File.WriteAllBytes(computedName, data);
+                            saved++;
+                            _skippedFiles.Add(computedName);
+                            _lastBytesSaved += data.Length;
+                            this.OnFileSaved(computedName, url, data);
+                            return true; // processed
+                        }
+                        catch (Exception ex)
+                        {
+                            _errors.Add(ex);
+                            return false; // not processed
+                        }
                     });
 
                     _filesSaved += saved;
                     return result;
                 }
+                catch(AggregateException ex)
+                {
+                    foreach (var e in ex.InnerExceptions)
+                    {
+                        if (!(e is ThreadAbortException)) {
+                            LogError(e);
+                        }
+                    }
+                    return -3;
+                }
                 catch (HttpRequestException ex)
                 {
                     this.LogError(ex.InnerException ?? ex);
+                    return -4;
                 }
                 catch (Exception ex)
                 {
@@ -422,10 +450,10 @@ namespace Downloader.Core
         /// Loops through all provided links and, based on the given folder, determines for each 
         /// URL found in the <paramref name="links"/> array whether a download is required.
         /// </summary>
-        /// <param name="cancelToken"></param>
-        /// <param name="pauseToken"></param>
-        /// <param name="folder"></param>
-        /// <param name="links"></param>
+        /// <param name="cancelToken">A token used to cancel the task.</param>
+        /// <param name="pauseToken">A token used to pause the task.</param>
+        /// <param name="folder">The fully-qualified path of the folder in which the downloaded files will presumably be saved. This parameter is used only to compute a unique file name for each provided URL.</param>
+        /// <param name="links">An array of URLs referencing the files to download.</param>
         /// <param name="saveDataCallback">A callback delegate that executes the persistence logic for the data downloaded.</param>
         /// <param name="skipRequiredCallback">
         /// An optional callback delegate that peforms custom checks on whether to skip the resource identified 
