@@ -77,10 +77,15 @@ namespace Downloader.Core
         public event EventHandler<DownloadEventArgs> ProgressStep;
 
         /// <summary>
-        /// Event raised to notify handlers that a downloaded resource has been saved to the file system.
+        /// Event raised to notify handlers that a downloaded resource has been saved.
         /// </summary>
         public event EventHandler<DownloadEventArgs> FileSaved;
 
+        /// <summary>
+        /// Event raised to notify handlers that a downloaded resource is requested to be saved.
+        /// </summary>
+        public event EventHandler<DownloadEventArgs> FileSaving;
+        
         #endregion
 
         #region properties
@@ -280,12 +285,19 @@ namespace Downloader.Core
                             {
                                 try
                                 {
-                                    img.Save(name, img.RawFormat);
-                                    processed = true;
-                                    saved++;
-                                    _skippedFiles.Add(name);
-                                    _lastBytesSaved += data.Length;
-                                    this.OnFileSaved(name, url, data);
+                                    int ioutcome = OnFileSaving(name, url, data);
+                                    if (ioutcome == 0)
+                                    {
+                                        img.Save(name, img.RawFormat);
+                                        _lastBytesSaved += data.Length;
+                                        this.OnFileSaved(name, url, data);
+                                    }
+                                    if (ioutcome == 0 || ioutcome == 1)
+                                    {
+                                        processed = true;
+                                        saved++;
+                                        _skippedFiles.Add(name);
+                                    }
                                 }
                                 catch (Exception ex)
                                 {
@@ -375,20 +387,28 @@ namespace Downloader.Core
 
                     int result = await DownloadCore(cancelToken, pauseToken, folder, links, (data, url, computedName) =>
                     {
+                        bool processed = false;
                         try
                         {
-                            File.WriteAllBytes(computedName, data);
-                            saved++;
-                            _skippedFiles.Add(computedName);
-                            _lastBytesSaved += data.Length;
-                            this.OnFileSaved(computedName, url, data);
-                            return true; // processed
+                            int ioutcome= OnFileSaving(computedName, url, data);
+                            if (ioutcome == 0)
+                            {
+                                File.WriteAllBytes(computedName, data);
+                                _lastBytesSaved += data.Length;
+                                this.OnFileSaved(computedName, url, data);
+                            }
+                            if (ioutcome == 0 || ioutcome == 1)
+                            {
+                                processed = true;
+                                saved++;
+                                _skippedFiles.Add(computedName);
+                            }
                         }
                         catch (Exception ex)
                         {
                             _errors.Add(ex);
-                            return false; // not processed
                         }
+                        return processed;
                     });
 
                     _filesSaved += saved;
@@ -595,6 +615,40 @@ namespace Downloader.Core
                     this.ProgressStep(this, e);
                 }
             }
+        }
+
+        /// <summary>
+        /// Fires the <see cref="FileSaving"/> event.
+        /// </summary>
+        /// <param name="name">The name of the file to save.</param>
+        /// <param name="url">The URL of the file to save.</param>
+        /// <param name="data">The downloaded content that should be saved.</param>
+        /// <param name="msg">The message to include. This argument is optional.</param>
+        /// <returns>
+        ///  0, if the event is not cancelled;
+        ///  1, if the event is cancelled but was handled by the user;
+        /// -1, if the event is cancelled and was not handled by the user.
+        /// </returns>
+        protected virtual int OnFileSaving(string name, string url, byte[] data, string msg = null)
+        {
+            if (FileSaving != null)
+            {
+                var e = new DownloadEventArgs(false) { Data = data, Message = msg, SavedFileName = name, Url = url, TotalBytes = _totalBytesDownloaded };
+
+                if (_syncRoot != null && _syncRoot.InvokeRequired)
+                {
+                    _syncRoot.Invoke(this.FileSaving, new object[] { this, e });
+                }
+                else
+                {
+                    this.FileSaving(this, e);
+                }
+                if (e.Cancel)
+                {
+                    return (e.Handled) ? 1 : -1;
+                }
+            }
+            return 0;
         }
 
         /// <summary>

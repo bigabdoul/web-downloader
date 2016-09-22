@@ -56,5 +56,10 @@ namespace Downloader.Core
         /// Gets or sets the total amount of bytes that have downloaded so far.
         /// </summary>
         public long TotalBytes { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value that indicates whether the current event has been handled.
+        /// </summary>
+        public bool Handled { get; set; }
     }
 }
