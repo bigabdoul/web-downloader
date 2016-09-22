@@ -256,57 +256,23 @@ namespace Downloader.Core
         /// </remarks>
         public virtual async Task<int> DownloadImages(CancellationToken cancelToken, PauseToken pauseToken, string folder, params string[] links)
         {
-            if (!_busy)
+            if (NewDownload(folder, links, links.Length))
             {
                 try
                 {
-                    _busy = true;
-                    _cancel = false;
-                    _lastBytesSaved = 0L;
+                    int saved = 0, minW = _minImageSize.Width, minH = _minImageSize.Height;
 
-                    _errors.Clear();
-
-                    if (!Directory.Exists(folder))
+                    int result = await DownloadCore(cancelToken, pauseToken, folder, links, (data, url, name) =>
                     {
-                        Directory.CreateDirectory(folder);
-                    }
+                        bool processed = false;
 
-                    int saved = 0, counter = 0, index = 1, max = links.Length;
-                    int minW = _minImageSize.Width, minH = _minImageSize.Height;
-                    
-                    this.OnProgressBegin(max);
-
-                    foreach (string url in links)
-                    {
-                        await pauseToken.WaitWhilePausedAsync();
-
-                        this.OnProgressStep(string.Format("Downloading file {0} of {1}...", index++, max));
-
-                        string name = ComputeUniqueName(url, folder);
-
-                        if (_skippedFiles.Contains(name))
-                        {
-                            counter++;
-                            continue;
-                        }
-
-                        if (File.Exists(name))
-                        {
-                            counter++;
-                            _skippedFiles.Add(name);
-                            continue;
-                        }
-
-                        var data = await _client.GetByteArrayAsync(url);
-                        int dataLength = data.Length;
-                        _totalBytesDownloaded += dataLength;
-
-                        using(var img = Image.FromStream(new MemoryStream(data)))
+                        using (var img = Image.FromStream(new MemoryStream(data)))
                         {
                             int w = img.Width, h = img.Height;
                             bool shouldSave = w >= minW || h >= minH;
-                            
-                            if (shouldSave && _minImageRatio > 0) {
+
+                            if (shouldSave && _minImageRatio > 0)
+                            {
                                 shouldSave = this.GetImageAspectRatio(w, h) >= _minImageRatio;
                             }
 
@@ -315,10 +281,10 @@ namespace Downloader.Core
                                 try
                                 {
                                     img.Save(name, img.RawFormat);
+                                    processed = true;
                                     saved++;
-                                    counter++;
                                     _skippedFiles.Add(name);
-                                    _lastBytesSaved += dataLength;
+                                    _lastBytesSaved += data.Length;
                                     this.OnFileSaved(name, url, data);
                                 }
                                 catch (Exception ex)
@@ -328,16 +294,16 @@ namespace Downloader.Core
                             }
                             else
                             {
-                                counter++;
+                                processed = true;
                                 _skippedFiles.Add(name);
                             } // endif
-                        }
+                        } // endusing
 
-                        if (_cancel || cancelToken.IsCancellationRequested) break;
-                    } // endforeach
+                        return processed;
+                    });
 
                     _filesSaved += saved;
-                    return counter;
+                    return result;
                 }
                 catch (HttpRequestException ex)
                 {
@@ -357,19 +323,76 @@ namespace Downloader.Core
             return -2;
         }
 
+        /// <summary>
+        /// Downloads to the specified folder the provided file references.
+        /// </summary>
+        /// <param name="folder">The fully-qualified path of the folder in which the downloaded files will be saved. If the directory does not exist, an attempt to create it will be made.</param>
+        /// <param name="links">An array of URLs referencing the files to download.</param>
+        /// <returns>A task that returns an integer that represents the number of files processed (not necessarily downloaded).</returns>
         public virtual async Task<int> DownloadFiles(string folder, params string[] links)
         {
             return await DownloadFiles(CancellationToken.None, PauseToken.None, folder, links);
         }
 
+        /// <summary>
+        /// Downloads to the specified folder the provided file references using a cancellation token.
+        /// </summary>
+        /// <param name="cancelToken">A token used to cancel the task.</param>
+        /// <param name="folder">The fully-qualified path of the folder in which the downloaded files will be saved. If the directory does not exist, an attempt to create it will be made.</param>
+        /// <param name="links">An array of URLs referencing the files to download.</param>
+        /// <returns>A task that returns an integer that represents the number of files processed (not necessarily downloaded).</returns>
         public async Task<int> DownloadFiles(CancellationToken cancelToken, string folder, params string[] links)
         {
             return await DownloadFiles(cancelToken, PauseToken.None, folder, links);
         }
 
+        /// <summary>
+        /// Downloads to the specified folder the provided file references using cancellation and pause tokens.
+        /// </summary>
+        /// <param name="cancelToken">A token used to cancel the task.</param>
+        /// <param name="pauseToken">A token used to pause the task.</param>
+        /// <param name="folder">The fully-qualified path of the folder in which the downloaded files will be saved. If the directory does not exist, an attempt to create it will be made.</param>
+        /// <param name="links">An array of URLs referencing the files to download.</param>
+        /// <returns>A task that returns an integer that represents the number of files processed (not necessarily downloaded).</returns>
         public virtual async Task<int> DownloadFiles(CancellationToken cancelToken, PauseToken pauseToken, string folder, params string[] links)
         {
-            throw new NotImplementedException();
+            if (NewDownload(folder, links, links.Length))
+            {
+                try
+                {
+                    int saved = 0;
+
+                    int result = await DownloadCore(cancelToken, pauseToken, folder, links, (data, url, computedName) =>
+                    {
+                        // TODO: save the downloaded data
+
+                        return false; // not processed
+                    },
+                    (url, computedName) =>
+                    {
+                        // TODO: check whether skipping the given url or computed name is required or not
+                        return true; // skip file download by default
+                    });
+
+                    _filesSaved += saved;
+                    return result;
+                }
+                catch (HttpRequestException ex)
+                {
+                    this.LogError(ex.InnerException ?? ex);
+                }
+                catch (Exception ex)
+                {
+                    this.LogError(ex);
+                    return -1;
+                }
+                finally
+                {
+                    if (_cancel) this.OnCancelled();
+                    _busy = false;
+                }
+            }
+            return -2;
         }
 
         /// <summary>
@@ -390,28 +413,74 @@ namespace Downloader.Core
         /// </summary>
         public void Dispose()
         {
-            this.disposing(false);
+            this.Dispose(false);
         }
 
         #region protected methods
 
         /// <summary>
-        /// Releases resources used by the current <see cref="DownloadManager"/> instance.
+        /// Loops through all provided links and, based on the given folder, determines for each 
+        /// URL found in the <paramref name="links"/> array whether a download is required.
         /// </summary>
-        /// <param name="disposing">true to release only managed resources; false to release both managed and unmanaged resources.</param>
-        protected virtual void Dispose(bool disposing)
+        /// <param name="cancelToken"></param>
+        /// <param name="pauseToken"></param>
+        /// <param name="folder"></param>
+        /// <param name="links"></param>
+        /// <param name="saveDataCallback">A callback delegate that executes the persistence logic for the data downloaded.</param>
+        /// <param name="skipRequiredCallback">
+        /// An optional callback delegate that peforms custom checks on whether to skip the resource identified 
+        /// by the computed name or not. If this argument is omitted, the default behavior is to skip any file 
+        /// that matches the computed name either in the current list of skipped files, or in the local file system.
+        /// </param>
+        /// <returns></returns>
+        protected virtual async Task<int> DownloadCore(CancellationToken cancelToken, PauseToken pauseToken, string folder, string[] links, Func<byte[], string, string, bool> saveDataCallback, Func<string, string, bool> skipRequiredCallback = null)
         {
-            if (!_disposed)
+            int counter = 0, index = 1, max = links.Length;
+
+            foreach (string url in links)
             {
-                if(disposing) {
-                    this.Cancel(5000);
-                    _client.Dispose();
+                await pauseToken.WaitWhilePausedAsync();
+
+                this.OnProgressStep(string.Format("Downloading file {0} of {1}...", index++, max));
+
+                string name = ComputeUniqueName(url, folder);
+
+                if (skipRequiredCallback != null) {
+                    if (skipRequiredCallback(url, name)) {
+                        if (!_skippedFiles.Contains(name)) _skippedFiles.Add(name);
+                        counter++;
+                        continue;
+                    }
                 }
-                GC.SuppressFinalize(this);
-                _disposed = true;
-            }
+                else if (_skippedFiles.Contains(name)) {
+                    counter++;
+                    continue;
+                }
+                else if (File.Exists(name)) {
+                    counter++;
+                    _skippedFiles.Add(name);
+                    continue;
+                }
+                
+                // download the resource as a byte array
+                var data = await _client.GetByteArrayAsync(url);
+
+                _totalBytesDownloaded += data.Length;
+
+                // invoke persistence policy
+                if (saveDataCallback(data, url, name))
+                    counter++;
+
+                if (_cancel || cancelToken.IsCancellationRequested) break;
+            } // endforeach
+
+            return counter;
         }
         
+        /// <summary>
+        /// Cancels the current operation with an optional timeout.
+        /// </summary>
+        /// <param name="millisecondsTimeout">The number of milliseconds to wait before timing out.</param>
         protected virtual void Cancel(int millisecondsTimeout)
         {
             if (this.Cancel() && millisecondsTimeout != 0)
@@ -426,6 +495,9 @@ namespace Downloader.Core
             }
         }
 
+        /// <summary>
+        /// Fires the <see cref="Cancelled"/> event.
+        /// </summary>
         protected virtual void OnCancelled()
         {
             if (Cancelled != null)
@@ -448,6 +520,10 @@ namespace Downloader.Core
             _cancel = false;
         }
 
+        /// <summary>
+        /// Fires the <see cref="ProgressBegin"/> event.
+        /// </summary>
+        /// <param name="maxSteps">The number of maximum steps required for the current operation to complete. This argument is optional.</param>
         protected virtual void OnProgressBegin(int maxSteps = 1)
         {
             _progressValue = 0;
@@ -472,6 +548,10 @@ namespace Downloader.Core
             }
         }
 
+        /// <summary>
+        /// Fires the <see cref="ProgressStep"/> event.
+        /// </summary>
+        /// <param name="msg">The message to include in the event data. This argument is optional.</param>
         protected virtual void OnProgressStep(string msg = null)
         {
             if (this.ProgressStep != null)
@@ -489,6 +569,13 @@ namespace Downloader.Core
             }
         }
 
+        /// <summary>
+        /// Fires the <see cref="FileSaved"/> event.
+        /// </summary>
+        /// <param name="name">The name of the saved file.</param>
+        /// <param name="url">The URL of the saved file.</param>
+        /// <param name="data">The downloaded content that was saved into the file.</param>
+        /// <param name="msg">The message to include. This argument is optional.</param>
         protected virtual void OnFileSaved(string name, string url, byte[] data, string msg = null)
         {
             if (this.FileSaved != null)
@@ -504,14 +591,63 @@ namespace Downloader.Core
             }
         }
         
+        /// <summary>
+        /// Adds the specified exception to the internal exceptions list.
+        /// </summary>
+        /// <param name="ex">
+        /// The error that occured. If the exception's InnerException property is set
+        /// then that exception is added; otherwise, the specified exception is added.
+        /// </param>
         protected virtual void LogError(Exception ex)
         {
             _errors.Add(ex.InnerException ?? ex);
         }
 
+        /// <summary>
+        /// Releases resources used by the current <see cref="DownloadManager"/> instance.
+        /// </summary>
+        /// <param name="disposing">true to release only managed resources; false to release both managed and unmanaged resources.</param>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed)
+            {
+                if (disposing)
+                {
+                    this.Cancel(5000);
+                    _client.Dispose();
+                }
+                GC.SuppressFinalize(this);
+                _disposed = true;
+            }
+        }
+
         #endregion
 
         #region private helper methods
+
+        private bool NewDownload(string folder, string[] links, int maxSteps)
+        {
+            lock (this)
+            {
+                if (_busy) {
+                    return false;
+                }
+
+                _busy = true;
+                _cancel = false;
+                _lastBytesSaved = 0L;
+
+                _errors.Clear();
+
+                if (!Directory.Exists(folder))
+                {
+                    Directory.CreateDirectory(folder);
+                }
+
+                this.OnProgressBegin(maxSteps);
+                return true;
+            }
+        }
 
         private IEnumerable<string> GetAttributeValues(IEnumerable<HtmlNode> nodes, string attrName)
         {
