@@ -88,32 +88,32 @@ namespace Downloader.Core
         /// <summary>
         /// Gets a value that indicates whether the current download manager is working.
         /// </summary>
-        public bool IsBusy { get { return _busy; } }
+        public virtual bool IsBusy { get { return _busy; } }
 
         /// <summary>
         /// Indicates whether errors occured since the last download operation.
         /// </summary>
-        public bool HasErrors { get { return _errors.Count > 0; } }
+        public virtual bool HasErrors { get { return _errors.Count > 0; } }
 
         /// <summary>
         /// Gets the total number of files saved to the system.
         /// </summary>
-        public int TotalFilesSaved { get { return _filesSaved; } }
+        public virtual int TotalFilesSaved { get { return _filesSaved; } }
 
         /// <summary>
         /// Gets the number of bytes that have been saved during the last save operation.
         /// </summary>
-        public long LastBytesSaved { get { return _lastBytesSaved; } }
+        public virtual long LastBytesSaved { get { return _lastBytesSaved; } }
 
         /// <summary>
         /// Gets the total number of bytes downloaded since the creation of this <see cref="DownloadManager"/> instance.
         /// </summary>
-        public long TotalBytesDownloaded { get { return _totalBytesDownloaded; } }
+        public virtual long TotalBytesDownloaded { get { return _totalBytesDownloaded; } }
 
         /// <summary>
         /// Gets or sets an object used to invoke synchronization delegates.
         /// </summary>
-        public ISynchronizeInvoke SyncRoot
+        public virtual ISynchronizeInvoke SyncRoot
         {
             get { return _syncRoot; }
             set { _syncRoot = value; }
@@ -122,7 +122,7 @@ namespace Downloader.Core
         /// <summary>
         /// Gets or sets the minimum size of images to download.
         /// </summary>
-        public Size MinImageSize
+        public virtual Size MinImageSize
         {
             get { return _minImageSize; }
             set { _minImageSize = value; }
@@ -131,7 +131,7 @@ namespace Downloader.Core
         /// <summary>
         /// Gets or sets the minimum aspect ratio of images to download.
         /// </summary>
-        public float MinImageAspectRatio
+        public virtual float MinImageAspectRatio
         {
             get { return _minImageRatio; }
             set { _minImageRatio = value; }
