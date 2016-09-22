@@ -77,10 +77,15 @@ namespace Downloader.Core
         public event EventHandler<DownloadEventArgs> ProgressStep;
 
         /// <summary>
-        /// Event raised to notify handlers that a downloaded resource has been saved to the file system.
+        /// Event raised to notify handlers that a downloaded resource has been saved.
         /// </summary>
         public event EventHandler<DownloadEventArgs> FileSaved;
 
+        /// <summary>
+        /// Event raised to notify handlers that a downloaded resource is requested to be saved.
+        /// </summary>
+        public event EventHandler<DownloadEventArgs> FileSaving;
+        
         #endregion
 
         #region properties
@@ -88,32 +93,32 @@ namespace Downloader.Core
         /// <summary>
         /// Gets a value that indicates whether the current download manager is working.
         /// </summary>
-        public bool IsBusy { get { return _busy; } }
+        public virtual bool IsBusy { get { return _busy; } }
 
         /// <summary>
         /// Indicates whether errors occured since the last download operation.
         /// </summary>
-        public bool HasErrors { get { return _errors.Count > 0; } }
+        public virtual bool HasErrors { get { return _errors.Count > 0; } }
 
         /// <summary>
         /// Gets the total number of files saved to the system.
         /// </summary>
-        public int TotalFilesSaved { get { return _filesSaved; } }
+        public virtual int TotalFilesSaved { get { return _filesSaved; } }
 
         /// <summary>
         /// Gets the number of bytes that have been saved during the last save operation.
         /// </summary>
-        public long LastBytesSaved { get { return _lastBytesSaved; } }
+        public virtual long LastBytesSaved { get { return _lastBytesSaved; } }
 
         /// <summary>
         /// Gets the total number of bytes downloaded since the creation of this <see cref="DownloadManager"/> instance.
         /// </summary>
-        public long TotalBytesDownloaded { get { return _totalBytesDownloaded; } }
+        public virtual long TotalBytesDownloaded { get { return _totalBytesDownloaded; } }
 
         /// <summary>
         /// Gets or sets an object used to invoke synchronization delegates.
         /// </summary>
-        public ISynchronizeInvoke SyncRoot
+        public virtual ISynchronizeInvoke SyncRoot
         {
             get { return _syncRoot; }
             set { _syncRoot = value; }
@@ -122,7 +127,7 @@ namespace Downloader.Core
         /// <summary>
         /// Gets or sets the minimum size of images to download.
         /// </summary>
-        public Size MinImageSize
+        public virtual Size MinImageSize
         {
             get { return _minImageSize; }
             set { _minImageSize = value; }
@@ -131,7 +136,7 @@ namespace Downloader.Core
         /// <summary>
         /// Gets or sets the minimum aspect ratio of images to download.
         /// </summary>
-        public float MinImageAspectRatio
+        public virtual float MinImageAspectRatio
         {
             get { return _minImageRatio; }
             set { _minImageRatio = value; }
@@ -280,12 +285,19 @@ namespace Downloader.Core
                             {
                                 try
                                 {
-                                    img.Save(name, img.RawFormat);
-                                    processed = true;
-                                    saved++;
-                                    _skippedFiles.Add(name);
-                                    _lastBytesSaved += data.Length;
-                                    this.OnFileSaved(name, url, data);
+                                    int ioutcome = OnFileSaving(name, url, data);
+                                    if (ioutcome == 0)
+                                    {
+                                        img.Save(name, img.RawFormat);
+                                        _lastBytesSaved += data.Length;
+                                        this.OnFileSaved(name, url, data);
+                                    }
+                                    if (ioutcome == 0 || ioutcome == 1)
+                                    {
+                                        processed = true;
+                                        saved++;
+                                        _skippedFiles.Add(name);
+                                    }
                                 }
                                 catch (Exception ex)
                                 {
@@ -305,9 +317,20 @@ namespace Downloader.Core
                     _filesSaved += saved;
                     return result;
                 }
+                catch (AggregateException ex)
+                {
+                    foreach (var e in ex.InnerExceptions)
+                    {
+                        if (!(e is ThreadAbortException)) {
+                            LogError(e);
+                        }
+                    }
+                    return -3;
+                }
                 catch (HttpRequestException ex)
                 {
-                    this.LogError(ex);
+                    this.LogError(ex.InnerException ?? ex);
+                    return -4;
                 }
                 catch (Exception ex)
                 {
@@ -364,22 +387,47 @@ namespace Downloader.Core
 
                     int result = await DownloadCore(cancelToken, pauseToken, folder, links, (data, url, computedName) =>
                     {
-                        // TODO: save the downloaded data
-
-                        return false; // not processed
-                    },
-                    (url, computedName) =>
-                    {
-                        // TODO: check whether skipping the given url or computed name is required or not
-                        return true; // skip file download by default
+                        bool processed = false;
+                        try
+                        {
+                            int ioutcome= OnFileSaving(computedName, url, data);
+                            if (ioutcome == 0)
+                            {
+                                File.WriteAllBytes(computedName, data);
+                                _lastBytesSaved += data.Length;
+                                this.OnFileSaved(computedName, url, data);
+                            }
+                            if (ioutcome == 0 || ioutcome == 1)
+                            {
+                                processed = true;
+                                saved++;
+                                _skippedFiles.Add(computedName);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _errors.Add(ex);
+                        }
+                        return processed;
                     });
 
                     _filesSaved += saved;
                     return result;
                 }
+                catch(AggregateException ex)
+                {
+                    foreach (var e in ex.InnerExceptions)
+                    {
+                        if (!(e is ThreadAbortException)) {
+                            LogError(e);
+                        }
+                    }
+                    return -3;
+                }
                 catch (HttpRequestException ex)
                 {
                     this.LogError(ex.InnerException ?? ex);
+                    return -4;
                 }
                 catch (Exception ex)
                 {
@@ -422,10 +470,10 @@ namespace Downloader.Core
         /// Loops through all provided links and, based on the given folder, determines for each 
         /// URL found in the <paramref name="links"/> array whether a download is required.
         /// </summary>
-        /// <param name="cancelToken"></param>
-        /// <param name="pauseToken"></param>
-        /// <param name="folder"></param>
-        /// <param name="links"></param>
+        /// <param name="cancelToken">A token used to cancel the task.</param>
+        /// <param name="pauseToken">A token used to pause the task.</param>
+        /// <param name="folder">The fully-qualified path of the folder in which the downloaded files will presumably be saved. This parameter is used only to compute a unique file name for each provided URL.</param>
+        /// <param name="links">An array of URLs referencing the files to download.</param>
         /// <param name="saveDataCallback">A callback delegate that executes the persistence logic for the data downloaded.</param>
         /// <param name="skipRequiredCallback">
         /// An optional callback delegate that peforms custom checks on whether to skip the resource identified 
@@ -567,6 +615,40 @@ namespace Downloader.Core
                     this.ProgressStep(this, e);
                 }
             }
+        }
+
+        /// <summary>
+        /// Fires the <see cref="FileSaving"/> event.
+        /// </summary>
+        /// <param name="name">The name of the file to save.</param>
+        /// <param name="url">The URL of the file to save.</param>
+        /// <param name="data">The downloaded content that should be saved.</param>
+        /// <param name="msg">The message to include. This argument is optional.</param>
+        /// <returns>
+        ///  0, if the event is not cancelled;
+        ///  1, if the event is cancelled but was handled by the user;
+        /// -1, if the event is cancelled and was not handled by the user.
+        /// </returns>
+        protected virtual int OnFileSaving(string name, string url, byte[] data, string msg = null)
+        {
+            if (FileSaving != null)
+            {
+                var e = new DownloadEventArgs(false) { Data = data, Message = msg, SavedFileName = name, Url = url, TotalBytes = _totalBytesDownloaded };
+
+                if (_syncRoot != null && _syncRoot.InvokeRequired)
+                {
+                    _syncRoot.Invoke(this.FileSaving, new object[] { this, e });
+                }
+                else
+                {
+                    this.FileSaving(this, e);
+                }
+                if (e.Cancel)
+                {
+                    return (e.Handled) ? 1 : -1;
+                }
+            }
+            return 0;
         }
 
         /// <summary>
