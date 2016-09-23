@@ -508,6 +508,13 @@ namespace Downloader.Core
         {
             string name = url.TrimEnd(FSLASH).Split(FSLASH).Last();
 
+            int idx = name.IndexOf('?');
+
+            if (idx > -1) {
+                // remove the query string from the URL
+                name = name.Substring(0, idx);
+            }
+
             name = string.Format("{0}_0x{1:x}{2}",
                 Path.GetFileNameWithoutExtension(name),
                 url.GetHashCode(),
