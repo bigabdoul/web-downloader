@@ -11,8 +11,14 @@ using System.Runtime.InteropServices;
 
 namespace Downloader.UI
 {
+    /// <summary>
+    /// Represents a connection state view control.
+    /// </summary>
     public partial class ConnectionStateView : UserControl
     {
+        /// <summary>
+        /// Initializes a new instance of the ConnectionStateView class.
+        /// </summary>
         public ConnectionStateView()
         {
             InitializeComponent();
@@ -50,6 +56,9 @@ namespace Downloader.UI
             lblConnectStatus.Text = "Connection Type:  " + ConnectionStateString;
         }
 
+        /// <summary>
+        /// Checks the internet connection state and updates the UI accordingly.
+        /// </summary>
         public void CheckInetConnection()
         {
             int tmpflags = 0;

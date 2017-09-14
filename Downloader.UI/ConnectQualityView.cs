@@ -11,8 +11,14 @@ using System.Runtime.InteropServices;
 
 namespace Downloader.UI
 {
+    /// <summary>
+    /// Represents a user control that reports internet connection quality.
+    /// </summary>
     public partial class ConnectQualityView : UserControl
     {
+        /// <summary>
+        /// Initializes a new instance of the ConnectQualityView class.
+        /// </summary>
         public ConnectQualityView()
         {
             InitializeComponent();
@@ -51,6 +57,9 @@ namespace Downloader.UI
             CheckInetConnection();
         }
 
+        /// <summary>
+        /// Checks the internet connection state and updates the UI accordingly.
+        /// </summary>
         public void CheckInetConnection()
         {
             int tmpflags = 0;
