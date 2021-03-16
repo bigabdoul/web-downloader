@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,6 +20,15 @@ namespace Downloader.Core
     public class DownloadManager : IDisposable
     {
         #region constructors
+
+        static DownloadManager()
+        {
+            ServicePointManager.SecurityProtocol = 
+                SecurityProtocolType.Ssl3 | 
+                SecurityProtocolType.Tls | 
+                SecurityProtocolType.Tls11 | 
+                SecurityProtocolType.Tls12;
+        }
 
         /// <summary>
         /// Initializes an instance of the <see cref="DownloadManager"/> class.
