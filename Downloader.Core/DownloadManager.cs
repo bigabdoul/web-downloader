@@ -67,6 +67,11 @@ namespace Downloader.Core
         private StringCollection _skippedFiles = new StringCollection();
         private Dictionary<string, string[]> _downloadedUrls = new Dictionary<string, string[]>();
 
+        const char FSLASH = '/';
+        const string HTTP = "http://";
+        const string HTTPS = "https://";
+        static readonly char[] IllegalFileNameChars = { '\\', '/', ':', '*', '?', '"', '<', '>', '|' };
+
         #endregion
 
         #region events
@@ -154,18 +159,7 @@ namespace Downloader.Core
 
         #endregion
 
-        /// <summary>
-        /// Returns a collection string messages that represents the errors that occured.
-        /// </summary>
-        /// <returns></returns>
-        public virtual IEnumerable<string> GetErrors()
-        {
-            foreach (Exception e in _errors)
-            {
-                yield return string.Format("{0}\n", e.Message).Trim();
-            }
-        }
-
+        #region public instance methods
         /// <summary>
         /// Downloads the document identified by <paramref name="url"/> and parses its content to find HTML tags that reference images.
         /// </summary>
@@ -175,7 +169,8 @@ namespace Downloader.Core
         {
             string key = url.Trim().TrimEnd('/');
 
-            if (_downloadedUrls.ContainsKey(key)) {
+            if (_downloadedUrls.ContainsKey(key))
+            {
                 return _downloadedUrls[key];
             }
 
@@ -199,18 +194,20 @@ namespace Downloader.Core
                     var nodes2 = doc.DocumentNode.Descendants("a").Where(e => e.Attributes.Contains("href")).ToArray();
 
                     this.OnProgressBegin(nodes1.Length + nodes2.Length);
-                    
+
                     var links = new List<string>();
 
-                    if (nodes1.Length > 0) {
+                    if (nodes1.Length > 0)
+                    {
                         links.AddRange(this.GetAttributeValues(nodes1, "src"));
                     }
-                    if (nodes2.Length > 0) {
+                    if (nodes2.Length > 0)
+                    {
                         links.AddRange(this.GetAttributeValues(nodes2, "href"));
                     }
 
                     MakeAbsoluteUri(links, new Uri(url));
-                    
+
                     var result = links.ToArray();
                     _downloadedUrls.Add(key, result);
 
@@ -218,7 +215,7 @@ namespace Downloader.Core
                 }
                 catch (HttpRequestException ex)
                 {
-                    this.LogError(ex);
+                    this.LogError(ex.InnerException ?? ex);
                 }
                 catch (Exception ex)
                 {
@@ -263,7 +260,16 @@ namespace Downloader.Core
         /// <param name="pauseToken">A token used to pause the task.</param>
         /// <param name="folder">The fully-qualified path of the folder in which the downloaded images will be saved. If the directory does not exist, an attempt to create it will be made.</param>
         /// <param name="links">An array of URLs referencing the images to download.</param>
-        /// <returns>A task that returns an integer that represents the number of images processed (not necessarily downloaded).</returns>
+        /// <returns>
+        /// <para>
+        /// A task that returns an integer which -when positive- represents the number of, including skipped, files that have been
+        /// processed (not necessarily downloaded), or -when negative- the error code of the exception category that occured.
+        /// </para>
+        /// <para>-3 for a <see cref="AggregateException"/>.</para>
+        /// <para>-2 for a <see cref="HttpRequestException"/>.</para>
+        /// <para>-1 for a general <see cref="Exception"/>.</para>
+        /// <para> 0 when no file has been processed.</para>
+        /// </returns>
         /// <remarks>
         /// <para>This method skips images that have already been downloaded and saved to the specified destination folder.</para>
         /// <para>It also skips images that are not compliant with the current minimum size and, eventually, minimum aspect ratio (if stricly positive).</para>
@@ -277,7 +283,7 @@ namespace Downloader.Core
                 {
                     int saved = 0, minW = _minImageSize.Width, minH = _minImageSize.Height;
 
-                    int result = await DownloadCore(cancelToken, pauseToken, folder, links, (data, url, name) =>
+                    int result = await DownloadCore(cancelToken, pauseToken, folder, links, (data, url, computedName) =>
                     {
                         bool processed = false;
 
@@ -295,18 +301,18 @@ namespace Downloader.Core
                             {
                                 try
                                 {
-                                    int ioutcome = OnFileSaving(name, url, data);
+                                    int ioutcome = OnFileSaving(data, url, computedName);
                                     if (ioutcome == 0)
                                     {
-                                        img.Save(name, img.RawFormat);
+                                        img.Save(computedName, img.RawFormat);
                                         _lastBytesSaved += data.Length;
-                                        this.OnFileSaved(name, url, data);
+                                        this.OnFileSaved(computedName, url, data);
                                     }
                                     if (ioutcome == 0 || ioutcome == 1)
                                     {
                                         processed = true;
                                         saved++;
-                                        _skippedFiles.Add(name);
+                                        _skippedFiles.Add(computedName);
                                     }
                                 }
                                 catch (Exception ex)
@@ -317,7 +323,7 @@ namespace Downloader.Core
                             else
                             {
                                 processed = true;
-                                _skippedFiles.Add(name);
+                                _skippedFiles.Add(computedName);
                             } // endif
                         } // endusing
 
@@ -331,7 +337,8 @@ namespace Downloader.Core
                 {
                     foreach (var e in ex.InnerExceptions)
                     {
-                        if (!(e is ThreadAbortException)) {
+                        if (!(e is ThreadAbortException))
+                        {
                             LogError(e);
                         }
                     }
@@ -340,7 +347,7 @@ namespace Downloader.Core
                 catch (HttpRequestException ex)
                 {
                     this.LogError(ex.InnerException ?? ex);
-                    return -4;
+                    return -2;
                 }
                 catch (Exception ex)
                 {
@@ -353,7 +360,7 @@ namespace Downloader.Core
                     _busy = false;
                 }
             }
-            return -2;
+            return 0;
         }
 
         /// <summary>
@@ -362,7 +369,7 @@ namespace Downloader.Core
         /// <param name="folder">The fully-qualified path of the folder in which the downloaded files will be saved. If the directory does not exist, an attempt to create it will be made.</param>
         /// <param name="links">An array of URLs referencing the files to download.</param>
         /// <returns>A task that returns an integer that represents the number of files processed (not necessarily downloaded).</returns>
-        public virtual async Task<int> DownloadFiles(string folder, params string[] links)
+        public async Task<int> DownloadFiles(string folder, params string[] links)
         {
             return await DownloadFiles(CancellationToken.None, PauseToken.None, folder, links);
         }
@@ -386,7 +393,16 @@ namespace Downloader.Core
         /// <param name="pauseToken">A token used to pause the task.</param>
         /// <param name="folder">The fully-qualified path of the folder in which the downloaded files will be saved. If the directory does not exist, an attempt to create it will be made.</param>
         /// <param name="links">An array of URLs referencing the files to download.</param>
-        /// <returns>A task that returns an integer that represents the number of files processed (not necessarily downloaded).</returns>
+        /// <returns>
+        /// <para>
+        /// A task that returns an integer which -when positive- represents the number of, including skipped, files that have been
+        /// processed (not necessarily downloaded), or -when negative- the error code of the exception category that occured.
+        /// </para>
+        /// <para>-3 for a <see cref="AggregateException"/>.</para>
+        /// <para>-2 for a <see cref="HttpRequestException"/>.</para>
+        /// <para>-1 for a general <see cref="Exception"/>.</para>
+        /// <para> 0 when no file has been processed.</para>
+        /// </returns>
         public virtual async Task<int> DownloadFiles(CancellationToken cancelToken, PauseToken pauseToken, string folder, params string[] links)
         {
             if (NewDownload(folder, links, links.Length))
@@ -400,7 +416,7 @@ namespace Downloader.Core
                         bool processed = false;
                         try
                         {
-                            int ioutcome= OnFileSaving(computedName, url, data);
+                            int ioutcome = OnFileSaving(data, url, computedName);
                             if (ioutcome == 0)
                             {
                                 File.WriteAllBytes(computedName, data);
@@ -424,11 +440,12 @@ namespace Downloader.Core
                     _filesSaved += saved;
                     return result;
                 }
-                catch(AggregateException ex)
+                catch (AggregateException ex)
                 {
                     foreach (var e in ex.InnerExceptions)
                     {
-                        if (!(e is ThreadAbortException)) {
+                        if (!(e is ThreadAbortException))
+                        {
                             LogError(e);
                         }
                     }
@@ -437,7 +454,7 @@ namespace Downloader.Core
                 catch (HttpRequestException ex)
                 {
                     this.LogError(ex.InnerException ?? ex);
-                    return -4;
+                    return -2;
                 }
                 catch (Exception ex)
                 {
@@ -450,7 +467,7 @@ namespace Downloader.Core
                     _busy = false;
                 }
             }
-            return -2;
+            return 0;
         }
 
         /// <summary>
@@ -459,11 +476,24 @@ namespace Downloader.Core
         /// <returns>true if the download manager is busy; otherwise, false.</returns>
         public virtual bool Cancel()
         {
-            if (_busy) {
+            if (_busy)
+            {
                 _cancel = true;
                 return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// Returns a collection string messages that represents the errors that occured.
+        /// </summary>
+        /// <returns></returns>
+        public virtual IEnumerable<string> GetErrors()
+        {
+            foreach (Exception e in _errors)
+            {
+                yield return string.Format("{0}\n", e.Message).Trim();
+            }
         }
 
         /// <summary>
@@ -473,6 +503,89 @@ namespace Downloader.Core
         {
             this.Dispose(false);
         }
+        #endregion
+
+        #region public static methods
+
+        /// <summary>
+        /// Generates a unique file name derived from the specified <paramref name="url"/>
+        /// and combines it into a path with the provided <paramref name="folder"/>.
+        /// </summary>
+        /// <param name="url">The URL of the resource for which to generate </param>
+        /// <param name="folder">The destination folder of the file.</param>
+        /// <returns></returns>
+        public static string ComputeUniqueName(string url, string folder)
+        {
+            string name = url.TrimEnd(FSLASH).Split(FSLASH).Last();
+
+            int idx = name.IndexOf('?');
+
+            if (idx > -1) {
+                // remove the query string from the URL
+                name = name.Substring(0, idx);
+            }
+
+            name = string.Format("{0}_0x{1:x}{2}",
+                Path.GetFileNameWithoutExtension(name),
+                url.GetHashCode(),
+                Path.GetExtension(name)
+            );
+
+            if (name.IndexOfAny(IllegalFileNameChars) > -1)
+            {
+                var b = new System.Text.StringBuilder(name);
+                foreach (var c in name) {
+                    if (IllegalFileNameChars.Contains(c)) {
+                        b.Replace(c.ToString(), string.Empty);
+                    }
+                }
+                name = b.ToString();
+                b.Clear();
+            }
+
+            return Path.Combine(folder, name);
+        }
+
+        /// <summary>
+        /// Makes sure that all provided links are absolute (and not relative) URIs.
+        /// </summary>
+        /// <param name="links">A list of links to make absolute URI.</param>
+        /// <param name="baseUri">The base URI to use for any relative link found in the list.</param>
+        public static void MakeAbsoluteUri(IList<string> links, Uri baseUri)
+        {
+            for (int i = 0; i < links.Count; i++)
+            {
+                try
+                {
+                    string url = links[i];
+
+                    if (url.StartsWith(HTTP, StringComparison.OrdinalIgnoreCase) || url.StartsWith(HTTPS, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    links[i] = new Uri(baseUri, url).AbsoluteUri;
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        [System.Runtime.InteropServices.DllImport("wininet.dll")]
+        private extern static bool InternetGetConnectedState(out int conn, int val);
+
+        /// <summary>
+        /// Checks whether the local system is actually connected to the internet.
+        /// </summary>
+        /// <returns></returns>
+        public static bool InternetAvailable()
+        {
+            int conn;
+            return InternetGetConnectedState(out conn, 0);
+        }
+
+        #endregion
 
         #region protected methods
 
@@ -490,7 +603,7 @@ namespace Downloader.Core
         /// by the computed name or not. If this argument is omitted, the default behavior is to skip any file 
         /// that matches the computed name either in the current list of skipped files, or in the local file system.
         /// </param>
-        /// <returns></returns>
+        /// <returns>An integer that represents the number of, including skipped, URLs that have been processed.</returns>
         protected virtual async Task<int> DownloadCore(CancellationToken cancelToken, PauseToken pauseToken, string folder, string[] links, Func<byte[], string, string, bool> saveDataCallback, Func<string, string, bool> skipRequiredCallback = null)
         {
             int counter = 0, index = 1, max = links.Length;
@@ -630,16 +743,16 @@ namespace Downloader.Core
         /// <summary>
         /// Fires the <see cref="FileSaving"/> event.
         /// </summary>
-        /// <param name="name">The name of the file to save.</param>
-        /// <param name="url">The URL of the file to save.</param>
         /// <param name="data">The downloaded content that should be saved.</param>
+        /// <param name="url">The URL of the downloaded data.</param>
+        /// <param name="name">The name of the file to save.</param>
         /// <param name="msg">The message to include. This argument is optional.</param>
         /// <returns>
         ///  0, if the event is not cancelled;
         ///  1, if the event is cancelled but was handled by the user;
         /// -1, if the event is cancelled and was not handled by the user.
         /// </returns>
-        protected virtual int OnFileSaving(string name, string url, byte[] data, string msg = null)
+        protected virtual int OnFileSaving(byte[] data, string url, string name, string msg = null)
         {
             if (FileSaving != null)
             {
@@ -784,69 +897,6 @@ namespace Downloader.Core
         {
             if (width == 0F || height == 0F) return 0F;
             return width > height ? height / width : width / height;
-        }
-
-        #endregion
-
-        #region public static methods
-
-        /// <summary>
-        /// Generates a unique file name derived from the specified <paramref name="url"/>
-        /// and combines it into a path with the provided <paramref name="folder"/>.
-        /// </summary>
-        /// <param name="url">The URL of the resource for which to generate </param>
-        /// <param name="folder">The destination folder of the file.</param>
-        /// <returns></returns>
-        public static string ComputeUniqueName(string url, string folder)
-        {
-            string name = url.Split('/').Last();
-
-            name = string.Format("{0}_0x{1:x}{2}",
-                Path.GetFileNameWithoutExtension(name),
-                url.GetHashCode(),
-                Path.GetExtension(name)
-            );
-
-            return Path.Combine(folder, name);
-        }
-
-        /// <summary>
-        /// Makes sure that all provided links are absolute (and not relative) URIs.
-        /// </summary>
-        /// <param name="links">A list of links to make absolute URI.</param>
-        /// <param name="baseUri">The base URI to use for any relative link found in the list.</param>
-        public static void MakeAbsoluteUri(IList<string> links, Uri baseUri)
-        {
-            for (int i = 0; i < links.Count; i++)
-            {
-                try
-                {
-                    string url = links[i];
-
-                    if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    links[i] = new Uri(baseUri, url).AbsoluteUri;
-                }
-                catch
-                {
-                }
-            }
-        }
-
-        [System.Runtime.InteropServices.DllImport("wininet.dll")]
-        private extern static bool InternetGetConnectedState(out int conn, int val);
-
-        /// <summary>
-        /// Checks whether the local system is actually connected to the internet.
-        /// </summary>
-        /// <returns></returns>
-        public static bool InternetAvailable()
-        {
-            int conn;
-            return InternetGetConnectedState(out conn, 0);
         }
 
         #endregion
